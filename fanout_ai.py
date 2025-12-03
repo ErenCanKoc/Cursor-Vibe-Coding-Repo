@@ -1,0 +1,213 @@
+import os
+import textwrap
+from typing import List
+
+from dotenv import load_dotenv
+from openai import OpenAI
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# .env dosyasından API anahtarını yükle
+load_dotenv()
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# --- 1. Validasyon Katmanı (GEO Kuralları) ---
+# GEO belgesindeki 40-80 kelime ve zamir kuralını burada kodla denetliyoruz.
+
+_INTENT_CHOICES = {
+    "Tanım",
+    "Karşılaştırma",
+    "Kısıtlar",
+    "Nasıl Yapılır",
+}
+
+
+class AnswerBlock(BaseModel):
+    intent_category: str = Field(
+        ...,
+        description="Sorgunun niyeti: 'Tanım', 'Karşılaştırma', 'Kısıtlar' veya 'Nasıl Yapılır'",
+    )
+    target_query: str = Field(..., description="Kullanıcının muhtemel fan-out sorgusu (Örn: 'Jotform vs Zapier fiyat')")
+    heading: str = Field(..., description="Blog yazısında H2 veya H3 olarak kullanılacak başlık")
+    content: str = Field(..., description="Doğrudan cevabı içeren snippet metni")
+    relevance_score: int = Field(..., description="LMP Relevance Puanı (0-100). İçerik soruyla ne kadar alakalı?")
+
+    @field_validator("intent_category")
+    def validate_intent(cls, value: str) -> str:
+        if value not in _INTENT_CHOICES:
+            raise ValueError(f"intent_category '{value}' desteklenmiyor. Geçerli seçenekler: {_INTENT_CHOICES}")
+        return value
+
+    @field_validator("content")
+    def validate_geo_rules(cls, value: str) -> str:
+        # Kural 1: Kelime Sayısı (GEO Taktikleri: 40-80 kelime ideal snippet)
+        word_count = len(value.split())
+        if word_count < 40 or word_count > 80:
+            raise ValueError(
+                f"Answer Block uzunluğu GEO standartlarına uymuyor ({word_count} kelime). 40-80 arası olmalı."
+            )
+
+        # Kural 2: Zamir Belirsizliği (GEO Taktikleri: 'Bu', 'O' gibi belirsiz girişler yasak)
+        forbidden_starts = ["bu ", "o ", "şu ", "bunlar ", "it ", "this ", "they "]
+        if any(value.lower().startswith(start) for start in forbidden_starts):
+            raise ValueError("Metin belirsiz bir zamirle başlıyor. Lütfen özneyi (Brand Name/Product) açıkça yaz.")
+
+        return value
+
+    @field_validator("heading")
+    def heading_cannot_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("heading boş olamaz")
+        return value.strip()
+
+    @field_validator("relevance_score")
+    def score_range(cls, value: int) -> int:
+        if not 0 <= value <= 100:
+            raise ValueError("relevance_score 0-100 arasında olmalı")
+        return value
+
+
+class FanOutResult(BaseModel):
+    main_keyword: str
+    analysis_summary: str = Field(..., description="Neden bu fan-out sorgularının seçildiğine dair kısa stratejik özet.")
+    blocks: List[AnswerBlock]
+
+    @model_validator(mode="after")
+    def validate_blocks(self) -> "FanOutResult":
+        block_count = len(self.blocks)
+        if not 3 <= block_count <= 5:
+            raise ValueError(f"3-5 arasında Answer Block bekleniyordu, {block_count} geldi")
+
+        queries = [block.target_query.lower() for block in self.blocks]
+        if len(queries) != len(set(queries)):
+            raise ValueError("target_query değerleri benzersiz olmalı")
+
+        return self
+
+
+class FanOutRequest(BaseModel):
+    """API ve CLI için standart fan-out giriş şeması."""
+
+    content_text: str = Field(..., description="Analiz edilecek kaynak içerik")
+    keyword: str = Field(..., description="Hedef anahtar kelime")
+
+    @model_validator(mode="after")
+    def strip_and_validate(self) -> "FanOutRequest":
+        self.content_text = self.content_text.strip()
+        self.keyword = self.keyword.strip()
+
+        if not self.content_text:
+            raise ValueError("content_text boş olamaz")
+
+        if not self.keyword:
+            raise ValueError("keyword boş olamaz")
+
+        return self
+
+
+# --- 2. AI Motoru (The Architect) ---
+
+def _build_system_prompt() -> str:
+    return textwrap.dedent(
+        """
+        Sen üst düzey bir GEO (Generative Engine Optimization) uzmanısın.
+        Görevin: Verilen blog içeriğini analiz etmek ve 'Fan-Out' (Yayılım) sorgularını tespit etmektir.
+
+        GEO KURALLARI:
+        1. AI modelleri (ChatGPT, Google AI) sadece 'Answer Block'ları okur.
+        2. Her blok kendi başına ayakta durabilmelidir (Standalone).
+        3. Asla 'Giriş' veya 'Sonuç' cümlesi yazma. Doğrudan cevabı ver.
+        4. Sayısal veriler (Fiyat, Limit, Yüzde) varsa mutlaka kullan.
+        5. 'Because / Therefore' mantıksal yapısını kullanmaya çalış.
+
+        LMP (Language Model Pipeline) SİMÜLASYONU:
+        - Ürettiğin her bloğu 0-100 arasında puanla. Eğer metin soruyu tam karşılamıyorsa puanı düşür.
+
+        FAN-OUT ARAŞTIRMA PRENSİPLERİ:
+        - Fan-out sorguları aynı SERP niyeti altında kümelensin; tekrarlayan entegrasyon/özellik vurgularından kaçın.
+        - Arama hacmi yüksek varyasyonları ("fiyat", "entegrasyon", "güvenlik", "alternatifler") içermeye öncelik ver.
+        - Her blok tek bir problem veya karar anına cevap vermeli.
+        """
+    ).strip()
+
+
+def _build_user_prompt(content_text: str, keyword: str) -> str:
+    trimmed_content = f"{content_text[:4000]}... (İçerik kısaltıldı)" if len(content_text) > 4000 else content_text
+    return textwrap.dedent(
+        f"""
+        Analiz Edilecek İçerik:
+        ---
+        {trimmed_content}
+        ---
+
+        Hedef Anahtar Kelime: "{keyword}"
+
+        Bu anahtar kelimeyle ilgili, kullanıcıların sorabileceği ama metinde net 'Snippet' olarak bulunmayan 3-5 alt sorguyu (Fan-Out) bul.
+        Her biri için GEO kurallarına tam uyan Answer Block'lar oluştur. Her başlıkta ana sorguyu tekrar et ve snippet'i tek cümlede odaklı tut.
+        """
+    ).strip()
+
+
+def generate_geo_content(content_text: str, keyword: str) -> FanOutResult | None:
+    """
+    İçeriği analiz eder, fan-out sorgularını bulur ve validasyonlu bloklar üretir.
+
+    Returns None if the model call fails.
+    """
+
+    system_prompt = _build_system_prompt()
+    user_prompt = _build_user_prompt(content_text, keyword)
+
+    try:
+        completion = client.beta.chat.completions.parse(
+            model="gpt-4o-2024-08-06",  # Structured Outputs destekleyen model
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format=FanOutResult,
+        )
+
+        return completion.choices[0].message.parsed
+
+    except Exception as exc:  # noqa: BLE001 - bilinçli olarak üst seviye yakalama
+        print(f"Bir hata oluştu: {exc}")
+        return None
+
+
+def generate_geo_content_from_request(request: FanOutRequest) -> FanOutResult | None:
+    """FanOutRequest üzerinden GEO içeriği üretir."""
+
+    return generate_geo_content(request.content_text, request.keyword)
+
+
+# --- 3. Test Çalıştırması ---
+
+if __name__ == "__main__":
+    # Örnek bir blog içeriği (Simülasyon)
+    sample_blog = """
+    Form oluşturucular, işletmelerin veri toplamasını sağlar. Piyasada birçok seçenek var.
+    Jotform bunlardan biridir ve kullanımı kolaydır. Sürükle bırak özelliği vardır.
+    Fiyatlandırma konusunda farklı seçenekler sunar. Güvenlik önlemleri de iyidir.
+    Entegrasyonlar sayesinde verileri başka yerlere gönderebilirsiniz.
+    """
+
+    keyword = "Online Form Builder"
+
+    payload = FanOutRequest(content_text=sample_blog, keyword=keyword)
+
+    print(f"🤖 '{keyword}' için GEO Analizi Başlatılıyor...\n")
+    result = generate_geo_content_from_request(payload)
+
+    if result:
+        print(f"📊 Strateji Özeti: {result.analysis_summary}\n")
+        for i, block in enumerate(result.blocks, 1):
+            print(f"--- Answer Block #{i} ---")
+            print(f"🎯 Niyet: {block.intent_category}")
+            print(f"🔍 Sorgu: {block.target_query}")
+            print(f"🏷️ Başlık: {block.heading}")
+            print(f"📝 İçerik: {block.content}")
+            print(f"⭐ LMP Puanı: {block.relevance_score}/100")
+            print("-" * 30)
+    else:
+        print("Model yanıt üretirken bir hata oluştu.")
