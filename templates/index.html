@@ -5,78 +5,279 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FanOut AI Analyzer</title>
     <style>
+      :root {
+        --blue: #0099ff;
+        --orange: #ff6100;
+        --gold: #ffb629;
+        --navy: #0a1551;
+        --text: #0f172a;
+        --muted: #4b5563;
+        --bg: #f4f7fb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        font-family: Arial, sans-serif;
+        font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
         margin: 0;
-        padding: 0;
-        background: #f6f7fb;
-        color: #1f2933;
+        min-height: 100vh;
+        background: radial-gradient(circle at 15% 20%, rgba(0, 153, 255, 0.08), transparent 35%),
+          radial-gradient(circle at 85% 30%, rgba(255, 97, 0, 0.08), transparent 32%),
+          radial-gradient(circle at 50% 80%, rgba(10, 21, 81, 0.08), transparent 28%),
+          var(--bg);
+        color: var(--text);
       }
+
       header {
-        background: #0f766e;
+        background: linear-gradient(120deg, var(--navy), var(--blue));
         color: white;
-        padding: 1.5rem;
+        padding: 2.5rem 1.5rem 3.25rem;
         text-align: center;
+        position: relative;
+        overflow: hidden;
       }
+
+      header::after,
+      header::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: 0.12;
+        background: radial-gradient(circle at 20% 20%, var(--gold), transparent 35%);
+        transform: translateY(-10%);
+      }
+
+      header::after {
+        background: radial-gradient(circle at 85% 10%, var(--orange), transparent 30%);
+        transform: translateY(18%);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 2.25rem;
+        letter-spacing: 0.5px;
+      }
+
+      header p {
+        margin: 0.6rem 0 0;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 1.05rem;
+      }
+
       main {
-        max-width: 900px;
-        margin: 2rem auto;
+        max-width: 1100px;
+        margin: -2.5rem auto 3rem;
         background: white;
-        padding: 2rem;
-        border-radius: 12px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+        padding: 2.25rem;
+        border-radius: 18px;
+        box-shadow: 0 20px 60px rgba(10, 21, 81, 0.12);
+        border: 1px solid rgba(10, 21, 81, 0.06);
+        position: relative;
+        z-index: 1;
       }
-      form {
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.25rem 1.5rem;
+        align-items: start;
+      }
+
+      .form-panel,
+      .results {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 1.5rem;
+        background: linear-gradient(135deg, rgba(0, 153, 255, 0.04), transparent 60%);
+      }
+
+      label {
+        display: block;
+        font-weight: 700;
+        color: var(--navy);
+        margin-bottom: 0.4rem;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-top: 0.35rem;
+      }
+
+      textarea,
+      input[type="text"],
+      input[type="file"] {
+        width: 100%;
+        padding: 0.9rem 1rem;
+        border: 1px solid #d5d9e2;
+        border-radius: 12px;
+        font-size: 1rem;
+        background: white;
+        color: var(--text);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 200px;
+      }
+
+      textarea:focus,
+      input[type="text"]:focus,
+      input[type="file"]:focus {
+        outline: none;
+        border-color: var(--blue);
+        box-shadow: 0 0 0 4px rgba(0, 153, 255, 0.16);
+      }
+
+      .actions {
+        display: flex;
+        gap: 0.8rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 0.25rem;
+      }
+
+      button {
+        background: linear-gradient(135deg, var(--orange), var(--gold));
+        color: #0a0a0a;
+        border: none;
+        padding: 0.95rem 1.3rem;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        box-shadow: 0 12px 30px rgba(255, 97, 0, 0.25);
+        transition: transform 0.1s ease, box-shadow 0.2s ease;
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 40px rgba(255, 97, 0, 0.28);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .callout {
+        background: linear-gradient(120deg, rgba(0, 153, 255, 0.08), rgba(255, 182, 41, 0.12));
+        border: 1px solid rgba(0, 153, 255, 0.2);
+        color: var(--navy);
+        border-radius: 12px;
+        padding: 0.85rem 1rem;
+        margin-top: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-weight: 600;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: rgba(10, 21, 81, 0.08);
+        color: var(--navy);
+        border-radius: 999px;
+        padding: 0.35rem 0.8rem;
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+
+      .error {
+        background: #ffeae5;
+        color: #9a1c00;
+        padding: 0.95rem 1rem;
+        border-radius: 12px;
+        border: 1px solid #ffc7b3;
+        margin-top: 1.25rem;
+        font-weight: 600;
+      }
+
+      .results {
+        margin-top: 2rem;
+        background: linear-gradient(135deg, rgba(255, 182, 41, 0.08), rgba(0, 153, 255, 0.04));
+        border: 1px solid rgba(10, 21, 81, 0.08);
+      }
+
+      .summary {
+        background: rgba(0, 153, 255, 0.08);
+        border: 1px solid rgba(0, 153, 255, 0.25);
+        color: var(--navy);
+        padding: 1.1rem 1.2rem;
+        border-radius: 12px;
+        margin-bottom: 1.25rem;
+        display: grid;
+        gap: 0.4rem;
+      }
+
+      .summary strong {
+        display: inline-block;
+        width: 140px;
+      }
+
+      .blocks {
         display: grid;
         gap: 1rem;
       }
-      label {
-        font-weight: 600;
-      }
-      textarea, input[type="text"] {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #d1d5db;
-        border-radius: 8px;
-        font-size: 1rem;
-        resize: vertical;
-      }
-      button {
-        background: #0f766e;
-        color: white;
-        border: none;
-        padding: 0.85rem 1.2rem;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 1rem;
-      }
-      button:hover {
-        background: #0c5f58;
-      }
-      .error {
-        background: #fee2e2;
-        color: #991b1b;
-        padding: 0.75rem 1rem;
-        border-radius: 8px;
-        border: 1px solid #fecaca;
-        margin-top: 1rem;
-      }
-      .results {
-        margin-top: 2rem;
-      }
+
       .block {
-        border: 1px solid #e5e7eb;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
+        border: 1px solid rgba(10, 21, 81, 0.12);
+        padding: 1.1rem 1.2rem;
+        border-radius: 14px;
+        background: white;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
       }
-      .summary {
-        background: #ecfdf3;
-        border: 1px solid #bbf7d0;
-        color: #166534;
-        padding: 1rem;
+
+      .block h3 {
+        margin: 0 0 0.35rem;
+        color: var(--navy);
+        letter-spacing: 0.15px;
+      }
+
+      .block p {
+        margin: 0.35rem 0;
+        color: var(--text);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: rgba(255, 97, 0, 0.1);
+        color: var(--orange);
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 0.95rem;
+      }
+
+      .score {
+        background: rgba(10, 21, 81, 0.08);
+        color: var(--navy);
+        padding: 0.4rem 0.75rem;
         border-radius: 10px;
-        margin-bottom: 1rem;
+        font-weight: 700;
+        display: inline-block;
+        margin-top: 0.2rem;
+      }
+
+      @media (max-width: 640px) {
+        header h1 {
+          font-size: 1.8rem;
+        }
+
+        main {
+          padding: 1.5rem;
+        }
+
+        .summary strong {
+          width: auto;
+        }
       }
     </style>
   </head>
@@ -86,46 +287,57 @@
       <p>Generate GEO-compliant answer blocks for your blog content.</p>
     </header>
     <main>
-      <form method="post" enctype="multipart/form-data">
-        <div>
-          <label for="keyword">Target Keyword</label>
-          <input id="keyword" name="keyword" type="text" placeholder="e.g., Online Form Builder" value="{{ submitted_keyword }}" required>
-        </div>
-        <div>
-          <label for="content_text">Content to Analyze</label>
-          <textarea id="content_text" name="content_text" rows="8" placeholder="Paste your blog post or article here.">{{ submitted_text }}</textarea>
-        </div>
-        <div>
-          <label for="content_file">Or upload a text file (UTF-8)</label>
-          <input id="content_file" name="content_file" type="file" accept=".txt,.md,.csv,.json,.log,text/plain">
-          <p style="margin: 0.35rem 0 0; color: #4b5563; font-size: 0.95rem;">You can combine pasted text with an uploaded file. Empty inputs are ignored.</p>
-        </div>
-        <div>
-          <button type="submit">Generate Fan-Out Blocks</button>
-        </div>
-      </form>
-
-      {% if error %}
-        <div class="error">{{ error }}</div>
-      {% endif %}
-
-      {% if result %}
-        <section class="results">
-          <div class="summary">
-            <strong>Keyword:</strong> {{ result.main_keyword }}<br>
-            <strong>Strategy Summary:</strong> {{ result.analysis_summary }}
-          </div>
-          {% for block in result.blocks %}
-            <div class="block">
-              <p><strong>Intent:</strong> {{ block.intent_category }}</p>
-              <p><strong>Query:</strong> {{ block.target_query }}</p>
-              <p><strong>Heading:</strong> {{ block.heading }}</p>
-              <p><strong>Content:</strong> {{ block.content }}</p>
-              <p><strong>LMP Score:</strong> {{ block.relevance_score }}/100</p>
+      <div class="form-grid">
+        <div class="form-panel">
+          <div class="badge">🚀 Fast semantic analysis</div>
+          <h2 style="margin: 0.75rem 0 0.35rem; color: var(--navy);">Optimize your content instantly</h2>
+          <p style="margin: 0 0 1rem; color: var(--muted);">Feed your content and keyword to build polished answer blocks that align with GEO best practices.</p>
+          <form method="post" enctype="multipart/form-data">
+            <div>
+              <label for="keyword">Target Keyword</label>
+              <input id="keyword" name="keyword" type="text" placeholder="e.g., Online Form Builder" value="{{ submitted_keyword }}" required>
             </div>
-          {% endfor %}
-        </section>
-      {% endif %}
+            <div>
+              <label for="content_text">Content to Analyze</label>
+              <textarea id="content_text" name="content_text" rows="8" placeholder="Paste your blog post or article here.">{{ submitted_text }}</textarea>
+              <div class="callout">💡 Tip: Add headings, FAQs, and product snippets to improve block depth.</div>
+            </div>
+            <div>
+              <label for="content_file">Or upload a text file (UTF-8)</label>
+              <input id="content_file" name="content_file" type="file" accept=".txt,.md,.csv,.json,.log,text/plain">
+              <p class="hint">You can combine pasted text with an uploaded file. Empty inputs are ignored.</p>
+            </div>
+            <div class="actions">
+              <button type="submit">Generate Fan-Out Blocks</button>
+              <span class="badge">🔥 GEO ready in seconds</span>
+            </div>
+          </form>
+          {% if error %}
+            <div class="error">{{ error }}</div>
+          {% endif %}
+        </div>
+
+        {% if result %}
+          <section class="results">
+            <div class="summary">
+              <div><strong>Keyword:</strong> {{ result.main_keyword }}</div>
+              <div><strong>Strategy:</strong> {{ result.analysis_summary }}</div>
+            </div>
+            <div class="blocks">
+              {% for block in result.blocks %}
+                <div class="block">
+                  <div class="pill">{{ block.intent_category }}</div>
+                  <h3>{{ block.heading }}</h3>
+                  <p><strong>Query:</strong> {{ block.target_query }}</p>
+                  <p>{{ block.content }}</p>
+                  <div class="score">LMP Score: {{ block.relevance_score }}/100</div>
+                </div>
+              {% endfor %}
+            </div>
+          </section>
+        {% endif %}
+      </div>
+
     </main>
   </body>
 </html>
