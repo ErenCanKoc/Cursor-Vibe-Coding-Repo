@@ -15,7 +15,7 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- 1. Validation Layer (GEO Rules) ---
-# We enforce the GEO document rules (40-80 words, no pronouns) here via code.
+# We apply GEO-inspired rules here. Some are hard constraints, others are soft quality signals.
 
 _INTENT_CHOICES = {
     "Definition",
@@ -57,17 +57,21 @@ class AnswerBlock(BaseModel):
 
     @field_validator("content")
     def validate_geo_rules(cls, value: str) -> str:
-        # SOFT RULE: Word Count (ideal 40–80, ama sadece uyarı)
+        """Apply GEO-style validation.
+
+        - Word count and causal connectors are SOFT rules (logged, not blocking).
+        - Pronoun ambiguity and multi-paragraph content are HARD rules (raise errors).
+        """
+        # SOFT RULE: Word Count (ideal 40–80, but do not block)
         word_count = len(value.split())
         if word_count < 40 or word_count > 80:
             logger.warning(
-                "GEO word count out of range (%s words). Expected 40–80. Text preview: %r",
+                "GEO word count out of range (%s words). Expected ~40–80. Text preview: %r",
                 word_count,
                 value[:150],
             )
-            # raise etmiyoruz, sadece logluyoruz
 
-        # HARD RULE 1: Ambiguous pronouns at the start
+        # HARD RULE 1: Ambiguous pronouns at the very start
         forbidden_starts = ["it ", "this ", "these ", "those ", "they ", "he ", "she "]
         if any(value.lower().startswith(start) for start in forbidden_starts):
             raise ValueError(
@@ -75,7 +79,7 @@ class AnswerBlock(BaseModel):
             )
 
         # HARD RULE 2: First word cannot be a pronoun (subject-first)
-        first_word = value.strip().split()[0].strip(",.?!:;\"'\(\)").lower()
+        first_word = value.strip().split()[0].strip(",.?!:;\"'() ").lower()
         if first_word in {"it", "this", "these", "those", "they", "he", "she"}:
             raise ValueError(
                 "First word must be an explicit subject (product/brand), not a pronoun."
@@ -87,24 +91,12 @@ class AnswerBlock(BaseModel):
                 "Answer Block must be a single paragraph without line breaks."
             )
 
-        # HARD RULE 4: Causal connector requirement
+        # SOFT RULE: Causal connector (helps GEO, but do not block)
         if not any(connector in value.lower() for connector in {" because ", " therefore", " which means"}):
-            raise ValueError(
-                "Answer Block must include a causal explanation using 'because', 'therefore', or 'which means'."
+            logger.warning(
+                "GEO causal connector missing. Expected 'because'/'therefore'/'which means'. Text preview: %r",
+                value[:150],
             )
-
-        # Rule 3: Subject-first requirement (avoid single-word pronouns even when capitalized)
-        first_word = value.strip().split()[0].strip(",.?!:;\"'\(\)").lower()
-        if first_word in {"it", "this", "these", "those", "they", "he", "she"}:
-            raise ValueError("First word must be an explicit subject (product/brand), not a pronoun.")
-
-        # Rule 4: Single-paragraph constraint
-        if "\n\n" in value or "\n" in value:
-            raise ValueError("Answer Block must be a single paragraph without line breaks.")
-
-        # Rule 5: Causal connector requirement
-        if not any(connector in value.lower() for connector in {" because ", " therefore", " which means"}):
-            raise ValueError("Answer Block must include a causal explanation using 'because', 'therefore', or 'which means'.")
 
         return value
 
@@ -124,8 +116,8 @@ class AnswerBlock(BaseModel):
 class FanOutResult(BaseModel):
     main_keyword: str
     analysis_summary: str = Field(
-        ..., 
-        description="A brief strategic summary of why these fan-out queries were selected."
+        ...,
+        description="A brief strategic summary of why these fan-out queries were selected.",
     )
     blocks: List[AnswerBlock]
 
@@ -133,7 +125,9 @@ class FanOutResult(BaseModel):
     def validate_blocks(self) -> "FanOutResult":
         block_count = len(self.blocks)
         if not 3 <= block_count <= 5:
-            raise ValueError(f"Expected between 3-5 Answer Blocks, received {block_count}")
+            raise ValueError(
+                f"Expected between 3-5 Answer Blocks, received {block_count}"
+            )
 
         queries = [block.target_query.lower() for block in self.blocks]
         if len(queries) != len(set(queries)):
@@ -155,7 +149,14 @@ def _build_system_prompt() -> str:
         2. Each block must be able to stand alone (Standalone).
         3. Never write 'Intro' or 'Conclusion' sentences. Provide the direct answer.
         4. If numerical data (Price, Limit, Percentage) is available, you must use it.
-        5. Try to use the 'Because / Therefore' logical structure.
+        5. Try to use the 'Because / Therefore' logical structure when it clarifies "why" or "should I" style questions.
+
+        OUTPUT STYLE CONSTRAINTS (VERY IMPORTANT):
+        - Each AnswerBlock.content should ideally be between 40 and 80 words.
+        - AnswerBlock.content must be a single paragraph.
+        - AnswerBlock.content must start with an explicit subject (product/brand/concept), not a pronoun.
+        - When reasonable, include a causal explanation using "because", "therefore", or "which means".
+        - Do not write introductions or conclusions. Every block should be a self-contained snippet.
 
         LMP (Language Model Pipeline) SIMULATION:
         - Score every block you generate between 0-100. If the text does not fully answer the question, lower the score.
@@ -169,7 +170,11 @@ def _build_system_prompt() -> str:
 
 
 def _build_user_prompt(content_text: str, keyword: str) -> str:
-    trimmed_content = f"{content_text[:4000]}... (Content truncated)" if len(content_text) > 4000 else content_text
+    trimmed_content = (
+        f"{content_text[:4000]}... (Content truncated)"
+        if len(content_text) > 4000
+        else content_text
+    )
     return textwrap.dedent(
         f"""
         Content to Analyze:
@@ -180,7 +185,7 @@ def _build_user_prompt(content_text: str, keyword: str) -> str:
         Target Keyword: "{keyword}"
 
         Find 3-5 sub-queries (Fan-Out) related to this keyword that users might ask but are not found as clear 'Snippets' in the text.
-        Create Answer Blocks for each one that strictly follow GEO rules. Repeat the main query in every heading and keep the snippet focused in a single paragraph.
+        Create Answer Blocks for each one that follow the GEO rules and output style constraints. Repeat the main query in every heading and keep each snippet focused in a single paragraph.
         """
     ).strip()
 
@@ -188,8 +193,8 @@ def _build_user_prompt(content_text: str, keyword: str) -> str:
 def generate_geo_content(content_text: str, keyword: str) -> Optional[FanOutResult]:
     """
     Analyzes content, finds fan-out queries, and generates validated blocks.
-    
-    Returns None if the model call fails.
+
+    Returns None if the model call fails or validation fails.
     """
 
     system_prompt = _build_system_prompt()
@@ -212,7 +217,7 @@ def generate_geo_content(content_text: str, keyword: str) -> Optional[FanOutResu
         return None
 
 
-# --- 3. Test Run ---
+# --- 3. Test Run / Public API ---
 
 def run_tool(content_text: str, keyword: str) -> dict:
     """
@@ -248,4 +253,5 @@ def run_tool(content_text: str, keyword: str) -> dict:
     if result is None:
         return {"error": "The AI service could not generate a response. Please try again."}
 
+    # Not: result bir Pydantic modeli; JSON dönerken .model_dump() kullanman gerekebilir.
     return {"result": result}
