@@ -1,48 +1,59 @@
-from flask import Flask, render_template, request
+from flask import Flask, request, render_template, jsonify
+from fanout_ai import run_tool
 
-from fanout_ai import FanOutResult, run_tool
+app = Flask(
+    __name__,
+    # Note: Ensure this path is actually correct for your server environment
+    template_folder="/home/eckoc1910/Cursor-Vibe-Coding-Repo/templates"
+)
 
-app = Flask(__name__)
+@app.route("/api/fanout", methods=["POST"])
+def fanout():
+    data = request.get_json() or {}
+    content_text = data.get("content_text") or data.get("content") or ""
+    keyword = data.get("keyword") or ""
 
+    result = run_tool(content_text, keyword)
+    return jsonify(result)
 
+# --- FIXED INDEX ROUTE ---
 @app.route("/", methods=["GET", "POST"])
 def index():
-    result_data: FanOutResult | None = None
-    error_message: str | None = None
-    combined_content = ""
+    result = None
+    error = None
+
+    # 1. Initialize variables explicitly so they exist for GET requests too
+    submitted_keyword = ""
+    submitted_text = ""
 
     if request.method == "POST":
-        content_text = request.form.get("content_text", "")
-        keyword = request.form.get("keyword", "")
-        uploaded_file = request.files.get("content_file")
+        try:
+            # 2. Capture form data into the variables we initialized
+            submitted_text = request.form.get("content_text", "")
+            submitted_keyword = request.form.get("keyword", "")
 
-        uploaded_text = ""
-        if uploaded_file and uploaded_file.filename:
-            try:
-                uploaded_text = uploaded_file.read().decode("utf-8").strip()
-            except UnicodeDecodeError:
-                error_message = "Uploaded file must be UTF-8 encoded text."
-            except Exception:
-                error_message = "Unable to read the uploaded file. Please try again."
+            # Run the tool
+            output = run_tool(content_text=submitted_text, keyword=submitted_keyword)
 
-        combined_content_parts = [part for part in [content_text.strip(), uploaded_text] if part]
-        combined_content = "\n\n".join(combined_content_parts)
-
-        if error_message is None:
-            response = run_tool(combined_content, keyword)
-            if "error" in response:
-                error_message = response["error"]
+            # Validate output
+            if isinstance(output, dict) and "result" in output:
+                result = output["result"]
+            elif isinstance(output, dict) and "error" in output:
+                error = output["error"]
             else:
-                result_data = response.get("result")
+                error = "Unexpected response format from AI tool."
 
+        except Exception as e:
+            error = f"An error occurred: {str(e)}"
+
+    # 3. Render template with all variables safely defined
     return render_template(
-        "index.html",
-        result=result_data,
-        error=error_message,
-        submitted_text=combined_content if request.method == "POST" else "",
-        submitted_keyword=request.form.get("keyword", "") if request.method == "POST" else "",
+        'index.html',
+        result=result,
+        error=error,
+        submitted_keyword=submitted_keyword,
+        submitted_text=submitted_text
     )
 
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    app.run(debug=True)
