@@ -1,257 +1,195 @@
 import logging
 import os
+import json
 import textwrap
-from typing import List, Optional
+from typing import List, Dict, Optional, Literal
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
+# --- Configuration ---
+load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Load API key from .env file
-load_dotenv()
+# You would typically set this in your .env file
+# OPENAI_API_KEY=sk-...
+# SERPER_API_KEY=... (Optional: for real search)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# --- 1. Validation Layer (GEO Rules) ---
-# We apply GEO-inspired rules here. Some are hard constraints, others are soft quality signals.
+# --- 1. Data Models ---
 
-_INTENT_CHOICES = {
-    "Definition",
-    "Comparison",
-    "Limitations",
-    "How-to",
-}
-
+class SubQueryPlan(BaseModel):
+    """Step 1 Output: The strategic plan."""
+    main_intent: str = Field(description="The primary intent of the user (e.g., 'Commercial Investigation').")
+    sub_queries: List[str] = Field(description="List of 3-5 specific search queries to gather missing information.")
 
 class AnswerBlock(BaseModel):
-    intent_category: str = Field(
-        ...,
-        description="The intent of the query: 'Definition', 'Comparison', 'Limitations', or 'How-to'",
-    )
-    target_query: str = Field(
-        ...,
-        description="The likely user fan-out query (e.g., 'Jotform vs Zapier pricing')",
-    )
-    heading: str = Field(
-        ...,
-        description="The heading to be used as H2 or H3 in the blog post",
-    )
-    content: str = Field(
-        ...,
-        description="The snippet text containing the direct answer",
-    )
-    relevance_score: int = Field(
-        ...,
-        description="LMP Relevance Score (0-100). How relevant is the content to the question?",
-    )
-
-    @field_validator("intent_category")
-    def validate_intent(cls, value: str) -> str:
-        if value not in _INTENT_CHOICES:
-            raise ValueError(
-                f"intent_category '{value}' is not supported. Valid options: {_INTENT_CHOICES}"
-            )
-        return value
-
-    @field_validator("content")
-    def validate_geo_rules(cls, value: str) -> str:
-        """Apply GEO-style validation.
-
-        - Word count and causal connectors are SOFT rules (logged, not blocking).
-        - Pronoun ambiguity and multi-paragraph content are HARD rules (raise errors).
-        """
-        # SOFT RULE: Word Count (ideal 40–80, but do not block)
-        word_count = len(value.split())
-        if word_count < 40 or word_count > 80:
-            logger.warning(
-                "GEO word count out of range (%s words). Expected ~40–80. Text preview: %r",
-                word_count,
-                value[:150],
-            )
-
-        # HARD RULE 1: Ambiguous pronouns at the very start
-        forbidden_starts = ["it ", "this ", "these ", "those ", "they ", "he ", "she "]
-        if any(value.lower().startswith(start) for start in forbidden_starts):
-            raise ValueError(
-                "Text starts with an ambiguous pronoun. Please use the Subject (Brand Name/Product) explicitly."
-            )
-
-        # HARD RULE 2: First word cannot be a pronoun (subject-first)
-        first_word = value.strip().split()[0].strip(",.?!:;\"'() ").lower()
-        if first_word in {"it", "this", "these", "those", "they", "he", "she"}:
-            raise ValueError(
-                "First word must be an explicit subject (product/brand), not a pronoun."
-            )
-
-        # HARD RULE 3: Single-paragraph constraint
-        if "\n" in value:
-            raise ValueError(
-                "Answer Block must be a single paragraph without line breaks."
-            )
-
-        # SOFT RULE: Causal connector (helps GEO, but do not block)
-        if not any(connector in value.lower() for connector in {" because ", " therefore", " which means"}):
-            logger.warning(
-                "GEO causal connector missing. Expected 'because'/'therefore'/'which means'. Text preview: %r",
-                value[:150],
-            )
-
-        return value
-
-    @field_validator("heading")
-    def heading_cannot_be_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("heading cannot be blank")
-        return value.strip()
-
-    @field_validator("relevance_score")
-    def score_range(cls, value: int) -> int:
-        if not 0 <= value <= 100:
-            raise ValueError("relevance_score must be between 0-100")
-        return value
-
+    """Step 3 Output: The final content block."""
+    heading: str
+    content: str = Field(description="The answer text (40-80 words).")
+    intent_category: Literal["Definition", "Comparison", "Limitations", "How-to"]
+    source_quality_score: int
+    relevance_score: int
 
 class FanOutResult(BaseModel):
-    main_keyword: str
-    analysis_summary: str = Field(
-        ...,
-        description="A brief strategic summary of why these fan-out queries were selected.",
-    )
+    """The final result object."""
+    analysis_summary: str
     blocks: List[AnswerBlock]
 
-    @model_validator(mode="after")
-    def validate_blocks(self) -> "FanOutResult":
-        block_count = len(self.blocks)
-        if not 3 <= block_count <= 5:
-            raise ValueError(
-                f"Expected between 3-5 Answer Blocks, received {block_count}"
-            )
+# --- 2. The Search Tool (Retrieval Layer) ---
 
-        queries = [block.target_query.lower() for block in self.blocks]
-        if len(queries) != len(set(queries)):
-            raise ValueError("target_query values must be unique")
+class SearchTool:
+    """
+    Handles the 'Retrieval' step in your diagram.
+    Currently defaults to a MOCK implementation to save you money/setup time.
+    """
+    
+    def __init__(self, provider: Literal["mock", "serper"] = "mock"):
+        self.provider = provider
+        self.api_key = os.getenv("SERPER_API_KEY")
 
-        return self
-
-
-# --- 2. AI Engine (The Architect) ---
-
-def _build_system_prompt() -> str:
-    return textwrap.dedent(
+    def search_multiple(self, queries: List[str]) -> Dict[str, str]:
         """
-        You are a top-tier GEO (Generative Engine Optimization) expert.
-        Your task is to analyze the provided blog content and detect 'Fan-Out' queries.
-
-        GEO RULES:
-        1. AI models (ChatGPT, Google AI) only read 'Answer Blocks'.
-        2. Each block must be able to stand alone (Standalone).
-        3. Never write 'Intro' or 'Conclusion' sentences. Provide the direct answer.
-        4. If numerical data (Price, Limit, Percentage) is available, you must use it.
-        5. Try to use the 'Because / Therefore' logical structure when it clarifies "why" or "should I" style questions.
-
-        OUTPUT STYLE CONSTRAINTS (VERY IMPORTANT):
-        - Each AnswerBlock.content should ideally be between 40 and 80 words.
-        - AnswerBlock.content must be a single paragraph.
-        - AnswerBlock.content must start with an explicit subject (product/brand/concept), not a pronoun.
-        - When reasonable, include a causal explanation using "because", "therefore", or "which means".
-        - Do not write introductions or conclusions. Every block should be a self-contained snippet.
-
-        LMP (Language Model Pipeline) SIMULATION:
-        - Score every block you generate between 0-100. If the text does not fully answer the question, lower the score.
-
-        FAN-OUT RESEARCH PRINCIPLES:
-        - Fan-out queries should cluster under the same SERP intent; avoid repetitive integration/feature highlights.
-        - Prioritize high-volume variations ("price", "integration", "security", "alternatives").
-        - Each block must answer a single problem or decision point.
+        Takes a list of queries, performs searches, and returns a 
+        dictionary mapping 'query' -> 'summarized_search_results'.
         """
-    ).strip()
+        results = {}
+        for q in queries:
+            if self.provider == "serper" and self.api_key:
+                results[q] = self._search_serper(q)
+            else:
+                results[q] = self._search_mock(q)
+        return results
 
+    def _search_mock(self, query: str) -> str:
+        """Simulates a search engine result for testing."""
+        logger.info(f"[Mock Search] Searching for: {query}")
+        # Return fake "scraped" content relevant to the query
+        return f"[Simulated Search Result for '{query}']: Top result discusses {query} in detail. Key specs include 10 hour battery life and M2 processor benchmarks..."
 
-def _build_user_prompt(content_text: str, keyword: str) -> str:
-    trimmed_content = (
-        f"{content_text[:4000]}... (Content truncated)"
-        if len(content_text) > 4000
-        else content_text
+    def _search_serper(self, query: str) -> str:
+        """Real implementation using Serper.dev (Cheap/Fast)."""
+        import requests
+        
+        url = "https://google.serper.dev/search"
+        payload = json.dumps({"q": query})
+        headers = {'X-API-KEY': self.api_key, 'Content-Type': 'application/json'}
+        
+        try:
+            response = requests.post(url, headers=headers, data=payload)
+            data = response.json()
+            # Extract snippets to form a context string
+            snippets = [
+                f"- {item.get('title')}: {item.get('snippet')}" 
+                for item in data.get("organic", [])[:4] # Top 4 results
+            ]
+            return "\n".join(snippets)
+        except Exception as e:
+            logger.error(f"Search failed for {query}: {e}")
+            return "No results found due to error."
+
+# --- 3. The AI Chain (Architect) ---
+
+def step_1_plan_queries(keyword: str) -> SubQueryPlan:
+    """
+    Step 1: Analyze the request and generate fan-out queries.
+    """
+    system_prompt = textwrap.dedent("""
+        You are a Search Strategist. 
+        Your goal is to break down a broad keyword into 3-5 specific sub-questions 
+        that cover different aspects (Price, Specs, Reviews, Alternatives).
+        These queries will be fed into a search engine.
+    """)
+    
+    completion = client.beta.chat.completions.parse(
+        model="gpt-4o-2024-08-06",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Target Keyword: {keyword}"}
+        ],
+        response_format=SubQueryPlan
     )
-    return textwrap.dedent(
-        f"""
-        Content to Analyze:
-        ---
-        {trimmed_content}
-        ---
+    return completion.choices[0].message.parsed
 
-        Target Keyword: "{keyword}"
-
-        Find 3-5 sub-queries (Fan-Out) related to this keyword that users might ask but are not found as clear 'Snippets' in the text.
-        Create Answer Blocks for each one that follow the GEO rules and output style constraints. Repeat the main query in every heading and keep each snippet focused in a single paragraph.
-        """
-    ).strip()
-
-
-def generate_geo_content(content_text: str, keyword: str) -> Optional[FanOutResult]:
+def step_3_synthesize(keyword: str, plan: SubQueryPlan, search_context: Dict[str, str]) -> FanOutResult:
     """
-    Analyzes content, finds fan-out queries, and generates validated blocks.
+    Step 3: Combine the Search Context into final Answer Blocks.
+    """
+    # Format the search context for the AI
+    context_str = ""
+    for query, result_text in search_context.items():
+        context_str += f"\n### Source for '{query}':\n{result_text}\n"
 
-    Returns None if the model call fails or validation fails.
+    system_prompt = textwrap.dedent("""
+        You are a GEO Content Engine.
+        Use the provided SEARCH CONTEXT to answer the questions.
+        
+        RULES:
+        - Create exactly one AnswerBlock per sub-query provided in the User Prompt.
+        - Use the specific 'Source' text provided for that query to write the answer.
+        - If the source text is weak, use your own knowledge and mark source_quality_score low.
+        - AnswerBlock.content must be 40-80 words, single paragraph.
+    """)
+
+    user_prompt = f"""
+    Main Keyword: {keyword}
+    Strategy Summary: {plan.main_intent}
+    
+    Background Data (Retrieved from Search):
+    {context_str}
+    
+    Task: Generate the FanOutResult.
     """
 
-    system_prompt = _build_system_prompt()
-    user_prompt = _build_user_prompt(content_text, keyword)
+    completion = client.beta.chat.completions.parse(
+        model="gpt-4o-2024-08-06",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        response_format=FanOutResult
+    )
+    return completion.choices[0].message.parsed
 
+# --- 4. Main Workflow ---
+
+def run_fan_out_workflow(keyword: str, use_real_search: bool = False) -> dict:
+    """
+    Executes the full Pipeline: Plan -> Retrieve -> Synthesize
+    """
+    print(f"--- Starting Fan-Out for '{keyword}' ---")
+    
+    # 1. PLAN
     try:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-2024-08-06",  # Model supporting Structured Outputs
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format=FanOutResult,
-        )
+        plan = step_1_plan_queries(keyword)
+        print(f"✅ Step 1 (Plan): Generated {len(plan.sub_queries)} queries.")
+        for q in plan.sub_queries:
+            print(f"   - {q}")
+    except Exception as e:
+        return {"error": f"Planning failed: {str(e)}"}
 
-        return completion.choices[0].message.parsed
+    # 2. RETRIEVE
+    try:
+        provider = "serper" if use_real_search else "mock"
+        search_tool = SearchTool(provider=provider)
+        search_results = search_tool.search_multiple(plan.sub_queries)
+        print(f"✅ Step 2 (Retrieval): Fetched data for {len(search_results)} queries using {provider}.")
+    except Exception as e:
+        return {"error": f"Search failed: {str(e)}"}
 
-    except Exception as exc:  # noqa: BLE001 - broad catch intentionally
-        logger.exception("An error occurred during GEO content generation: %s", exc)
-        return None
+    # 3. SYNTHESIZE
+    try:
+        final_result = step_3_synthesize(keyword, plan, search_results)
+        print(f"✅ Step 3 (Synthesis): Generated {len(final_result.blocks)} answer blocks.")
+    except Exception as e:
+        return {"error": f"Synthesis failed: {str(e)}"}
 
+    return final_result.model_dump()
 
-# --- 3. Test Run / Public API ---
-
-def run_tool(content_text: str, keyword: str) -> dict:
-    """
-    Execute the FanOut AI workflow and return structured results for UI rendering.
-
-    Parameters
-    ----------
-    content_text:
-        The blog or article text to analyze.
-    keyword:
-        The primary keyword that guides fan-out query generation.
-
-    Returns
-    -------
-    dict
-        A dictionary containing either a ``result`` key with ``FanOutResult`` data
-        or an ``error`` key with a human-friendly message.
-    """
-
-    content_text = (content_text or "").strip()
-    keyword = (keyword or "").strip()
-
-    if not content_text:
-        return {"error": "Content is required via text input or uploaded file."}
-    if not keyword:
-        return {"error": "Keyword is required."}
-
-    if not os.getenv("OPENAI_API_KEY"):
-        return {"error": "OPENAI_API_KEY is not configured."}
-
-    result = generate_geo_content(content_text, keyword)
-
-    if result is None:
-        return {"error": "The AI service could not generate a response. Please try again."}
-
-    # Not: result bir Pydantic modeli; JSON dönerken .model_dump() kullanman gerekebilir.
-    return {"result": result}
+# --- Example Usage ---
+if __name__ == "__main__":
+    # Test run
+    result = run_fan_out_workflow("Best laptop for college students")
+    print(json.dumps(result, indent=2))
