@@ -31,42 +31,67 @@ class AnswerBlock(BaseModel):
         description="The intent of the query: 'Definition', 'Comparison', 'Limitations', or 'How-to'",
     )
     target_query: str = Field(
-        ..., 
-        description="The likely user fan-out query (e.g., 'Jotform vs Zapier pricing')"
+        ...,
+        description="The likely user fan-out query (e.g., 'Jotform vs Zapier pricing')",
     )
     heading: str = Field(
-        ..., 
-        description="The heading to be used as H2 or H3 in the blog post"
+        ...,
+        description="The heading to be used as H2 or H3 in the blog post",
     )
     content: str = Field(
-        ..., 
-        description="The snippet text containing the direct answer"
+        ...,
+        description="The snippet text containing the direct answer",
     )
     relevance_score: int = Field(
-        ..., 
-        description="LMP Relevance Score (0-100). How relevant is the content to the question?"
+        ...,
+        description="LMP Relevance Score (0-100). How relevant is the content to the question?",
     )
 
     @field_validator("intent_category")
     def validate_intent(cls, value: str) -> str:
         if value not in _INTENT_CHOICES:
-            raise ValueError(f"intent_category '{value}' is not supported. Valid options: {_INTENT_CHOICES}")
+            raise ValueError(
+                f"intent_category '{value}' is not supported. Valid options: {_INTENT_CHOICES}"
+            )
         return value
 
     @field_validator("content")
     def validate_geo_rules(cls, value: str) -> str:
-        # Rule 1: Word Count (GEO Tactics: 40-80 words is the ideal snippet)
+        # SOFT RULE: Word Count (ideal 40–80, ama sadece uyarı)
         word_count = len(value.split())
         if word_count < 40 or word_count > 80:
-            raise ValueError(
-                f"Answer Block length does not meet GEO standards ({word_count} words). Must be between 40-80."
+            logger.warning(
+                "GEO word count out of range (%s words). Expected 40–80. Text preview: %r",
+                word_count,
+                value[:150],
             )
+            # raise etmiyoruz, sadece logluyoruz
 
-        # Rule 2: Ambiguous Pronouns (GEO Tactics: 'This', 'It' etc. are forbidden at the start)
-        # Updated for English pronouns
+        # HARD RULE 1: Ambiguous pronouns at the start
         forbidden_starts = ["it ", "this ", "these ", "those ", "they ", "he ", "she "]
         if any(value.lower().startswith(start) for start in forbidden_starts):
-            raise ValueError("Text starts with an ambiguous pronoun. Please use the Subject (Brand Name/Product) explicitly.")
+            raise ValueError(
+                "Text starts with an ambiguous pronoun. Please use the Subject (Brand Name/Product) explicitly."
+            )
+
+        # HARD RULE 2: First word cannot be a pronoun (subject-first)
+        first_word = value.strip().split()[0].strip(",.?!:;\"'\(\)").lower()
+        if first_word in {"it", "this", "these", "those", "they", "he", "she"}:
+            raise ValueError(
+                "First word must be an explicit subject (product/brand), not a pronoun."
+            )
+
+        # HARD RULE 3: Single-paragraph constraint
+        if "\n" in value:
+            raise ValueError(
+                "Answer Block must be a single paragraph without line breaks."
+            )
+
+        # HARD RULE 4: Causal connector requirement
+        if not any(connector in value.lower() for connector in {" because ", " therefore", " which means"}):
+            raise ValueError(
+                "Answer Block must include a causal explanation using 'because', 'therefore', or 'which means'."
+            )
 
         return value
 
