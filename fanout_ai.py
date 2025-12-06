@@ -11,33 +11,26 @@ from pydantic import BaseModel, Field
 # --- Configuration ---
 load_dotenv()
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-# Load API Key
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 
 # --- 1. Data Models ---
 
 class SubQueryPlan(BaseModel):
-    """Step 1 Output: The strategic plan."""
-
-    main_intent: str = Field(description="The primary intent of the user (e.g., 'Commercial Investigation').")
-    sub_queries: List[str] = Field(description="List of 3-5 specific search queries to gather missing information.")
+    main_intent: str
+    sub_queries: List[str]
 
 
 class AnswerBlock(BaseModel):
-    """Step 3 Output: The final content block."""
-
     heading: str
-    content: str = Field(description="The answer text (40-80 words).")
+    content: str
     intent_category: Literal["Definition", "Comparison", "Limitations", "How-to"]
     source_quality_score: int
     relevance_score: int
 
 
 class FanOutResult(BaseModel):
-    """The final result object."""
-
     analysis_summary: str
     blocks: List[AnswerBlock]
 
@@ -45,163 +38,118 @@ class FanOutResult(BaseModel):
 # --- 2. Prompt Builders ---
 
 def _build_system_prompt() -> str:
-    """Return the system prompt used when generating GEO content directly."""
+    return textwrap.dedent("""
+You are a GEO Content Engine specialized in AI-extractable answers.
 
-    return textwrap.dedent(
-        """
-        You are a GEO Content Engine.
-        Produce concise, well-structured answer blocks based on the provided content and keyword.
+Use the provided SEARCH CONTEXT as background knowledge, not as text to copy.
+Each AnswerBlock must function as a standalone answer that can be surfaced
+directly by AI systems without surrounding page context.
 
-        Rules:
-        - Create one AnswerBlock per synthesized subtopic.
-        - Favor clarity and factual tone.
-        - Keep AnswerBlock.content between 40-80 words.
-        - Score source_quality_score higher when the provided background looks reliable; otherwise keep it low.
-        - Set relevance_score based on how tightly the block answers the keyword intent.
-        """
-    )
+RULES:
+- Generate between 3 and 5 AnswerBlocks in total.
+- Create exactly one AnswerBlock per sub-query provided in the User Prompt.
+- If fewer than 3 sub-queries are provided, synthesize additional high-value
+  sub-queries yourself (based on the same keyword and intent) so that you still
+  output at least 3 AnswerBlocks.
+- Evaluate the quality of the provided Source text for each sub-query.
+
+SOURCE USAGE LOGIC:
+- If the Source text clearly and completely answers the query:
+  - You may use the core idea from the Source
+  - You MUST rewrite it significantly for clarity, authority, and GEO optimization
+  - Set source_quality_score in the 70–90 range for strong sources
+
+- If the Source text is weak, incomplete, or scattered:
+  - Generate a better answer using your own subject-matter knowledge
+  - Treat the Source only as contextual support
+  - Set source_quality_score below 70 and enrich the answer accordingly
+
+CONTENT REQUIREMENTS:
+- AnswerBlock.content must be 40–80 words in a single paragraph.
+- Start with an explicit subject (concept, product, or practice), never a pronoun.
+- Deliver the core answer within the first one or two sentences (snippet-first).
+- Include a clear causal explanation using "because", "therefore", or "which means".
+- Close the decision or question; avoid vague or exploratory language.
+
+SCORING GUIDANCE:
+- source_quality_score reflects the usefulness of the original Source,
+  not the quality of the generated AnswerBlock.
+- For well-formed, GEO-compliant answers with reasonably good sources,
+  prefer scores in the 70–85 range instead of being overly conservative.
+- Only use scores below 50 when the Source is clearly weak or irrelevant.
+- Prioritize GEO suitability and AI extractability over encyclopedic completeness.
+""")
 
 
-def _build_user_prompt(content_text: str, keyword: str) -> str:
-    """Shape the user prompt for the GEO content generator."""
+def _build_user_prompt(keyword: str, plan: SubQueryPlan, context: str) -> str:
+    return textwrap.dedent(f"""
+    Main Keyword: {keyword}
+    Strategy: {plan.main_intent}
 
-    base_content = content_text.strip() or "No additional background text provided."
-    return textwrap.dedent(
-        f"""
-        Main Keyword: {keyword}
-        Background Content:
-        {base_content}
+    SEARCH CONTEXT:
+    {context}
 
-        Please analyze the keyword and background to produce a FanOutResult JSON.
-        """
-    )
+    Generate a FanOutResult JSON.
+    """)
 
 
-# --- 3. The Search Tool (Retrieval Layer) ---
+# --- 3. Search Tool (Mock Only) ---
 
 class SearchTool:
-    """
-    Handles the 'Retrieval' step.
-    Default: 'mock' mode uses GPT-4o to SIMULATE search results (Synthetic Data).
-    """
-
-    def __init__(self, provider: Literal["mock", "serper"] = "mock"):
-        self.provider = provider
-        self.api_key = os.getenv("SERPER_API_KEY")
-
     def search_multiple(self, queries: List[str]) -> Dict[str, str]:
         results = {}
         for q in queries:
-            if self.provider == "serper" and self.api_key:
-                results[q] = self._search_serper(q)
-            else:
-                results[q] = self._search_mock_smart(q)
+            results[q] = self._mock_search(q)
         return results
 
-    def _search_mock_smart(self, query: str) -> str:
-        """
-        Uses the LLM's internal knowledge to hallucinate a realistic search snippet.
-        This makes the tool functional for testing/drafting without a real search engine.
-        """
-
+    def _mock_search(self, query: str) -> str:
         logger.info("[Smart Mock] Generating synthetic content for: %s", query)
-
-        try:
-            completion = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a search engine simulator. Write a realistic, high-quality "
-                            "search result snippet (100 words) that directly answers the user's query with facts."
-                        ),
-                    },
-                    {"role": "user", "content": f"Search Query: {query}"},
-                ],
-            )
-            return completion.choices[0].message.content
-        except Exception as exc:  # pragma: no cover - network/LLM dependent
-            logger.error("Smart mock failed: %s", exc)
-            return "Error generating mock content."
-
-    def _search_serper(self, query: str) -> str:
-        """Real implementation using Serper.dev"""
-
-        import requests
-
-        url = "https://google.serper.dev/search"
-        payload = json.dumps({"q": query})
-        headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
-
-        try:
-            response = requests.post(url, headers=headers, data=payload)
-            data = response.json()
-            snippets = [
-                f"- {item.get('title')}: {item.get('snippet')}"
-                for item in data.get("organic", [])[:4]
-            ]
-            return "\n".join(snippets)
-        except Exception as exc:  # pragma: no cover - network/LLM dependent
-            logger.error("Search failed for %s: %s", query, exc)
-            return "No results found due to error."
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are simulating a Google search snippet. "
+                        "Provide a concise, factual 100-word answer."
+                    ),
+                },
+                {"role": "user", "content": query},
+            ],
+        )
+        return completion.choices[0].message.content
 
 
-# --- 4. The AI Chain (Architect) ---
+# --- 4. STEP 1 — GEO FAN-OUT DISCOVERY (UPDATED ✅) ---
 
-def step_1_plan_queries(keyword: str) -> SubQueryPlan:
-    """Step 1: Analyze the request and generate fan-out queries."""
+def step_1_plan_queries(keyword: str, content_text: str = "") -> SubQueryPlan:
+    system_prompt = textwrap.dedent("""
+    You are a GEO Query Strategist.
 
-    system_prompt = textwrap.dedent(
-        """
-        You are a Search Strategist.
-        Your goal is to break down a broad keyword into 3-5 specific sub-questions
-        that cover different aspects (Price, Specs, Reviews, Alternatives).
-        These queries will be fed into a search engine.
-        """
-    )
+    Generate fan-out queries optimized for AI answer surfaces.
 
-    completion = client.beta.chat.completions.parse(
-        model="gpt-4o-2024-08-06",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Target Keyword: {keyword}"},
-        ],
-        response_format=SubQueryPlan,
-    )
-    return completion.choices[0].message.parsed
+    Use these intent templates:
+    - Definition / Meaning
+    - Importance / Why it matters
+    - How-to / Process
+    - Rules / Requirements
+    - Consequences / Edge cases
 
+    RULES:
+    - Generate 3–5 distinct questions.
+    - One question per intent.
+    - Avoid paraphrases.
+    - Must be answerable in one authoritative paragraph.
+    """)
 
-def step_3_synthesize(keyword: str, plan: SubQueryPlan, search_context: Dict[str, str]) -> FanOutResult:
-    """Step 3: Combine the Search Context into final Answer Blocks."""
+    user_prompt = textwrap.dedent(f"""
+    Target Keyword: {keyword}
 
-    context_parts = [f"### Source for '{query}':\n{result_text}" for query, result_text in search_context.items()]
-    context_str = "\n\n".join(context_parts)
+    Optional Content Context:
+    {content_text[:1200] if content_text else "No content provided."}
 
-    system_prompt = textwrap.dedent(
-        """
-        You are a GEO Content Engine.
-        Use the provided SEARCH CONTEXT to answer the questions.
-
-        RULES:
-        - Create exactly one AnswerBlock per sub-query provided in the User Prompt.
-        - Use the specific 'Source' text provided for that query to write the answer.
-        - If the source text is weak, use your own knowledge and mark source_quality_score low.
-        - AnswerBlock.content must be 40-80 words, single paragraph.
-        """
-    )
-
-    user_prompt = textwrap.dedent(
-        f"""
-        Main Keyword: {keyword}
-        Strategy Summary: {plan.main_intent}
-
-        Background Data (Retrieved from Search):
-        {context_str}
-
-        Task: Generate the FanOutResult.
-        """
-    )
+    Output a SubQueryPlan JSON.
+    """)
 
     completion = client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
@@ -209,77 +157,57 @@ def step_3_synthesize(keyword: str, plan: SubQueryPlan, search_context: Dict[str
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        response_format=FanOutResult,
+        response_format=SubQueryPlan,
     )
+
     return completion.choices[0].message.parsed
 
 
-# --- 5. Main Workflow & Public APIs ---
+# --- 5. STEP 3 — SYNTHESIS ---
 
-def run_fan_out_workflow(keyword: str, use_real_search: bool = False) -> dict:
-    """Executes the full Pipeline: Plan -> Retrieve -> Synthesize."""
+def step_3_synthesize(
+    keyword: str,
+    plan: SubQueryPlan,
+    search_context: Dict[str, str],
+) -> FanOutResult:
 
+    context_str = "\n\n".join(
+        f"### Source for '{q}':\n{txt}" for q, txt in search_context.items()
+    )
+
+    completion = client.beta.chat.completions.parse(
+        model="gpt-4o-2024-08-06",
+        messages=[
+            {"role": "system", "content": _build_system_prompt()},
+            {
+                "role": "user",
+                "content": _build_user_prompt(keyword, plan, context_str),
+            },
+        ],
+        response_format=FanOutResult,
+    )
+
+    return completion.choices[0].message.parsed
+
+
+# --- 6. MAIN WORKFLOW ---
+
+def run_fan_out_workflow(keyword: str, content_text: str = "") -> dict:
     try:
-        plan = step_1_plan_queries(keyword)
-    except Exception as exc:  # pragma: no cover - network/LLM dependent
-        logger.exception("Step 1 failed")
-        return {"error": f"Planning failed: {str(exc)}"}
-
-    try:
-        provider = "serper" if use_real_search else "mock"
-        search_tool = SearchTool(provider=provider)
+        plan = step_1_plan_queries(keyword, content_text)
+        search_tool = SearchTool()
         search_results = search_tool.search_multiple(plan.sub_queries)
-    except Exception as exc:  # pragma: no cover - network/LLM dependent
-        logger.exception("Step 2 failed")
-        return {"error": f"Search failed: {str(exc)}"}
-
-    try:
         final_result = step_3_synthesize(keyword, plan, search_results)
-    except Exception as exc:  # pragma: no cover - network/LLM dependent
-        logger.exception("Step 3 failed")
-        return {"error": f"Synthesis failed: {str(exc)}"}
-
-    return {"result": final_result.model_dump()}
-
-
-def generate_geo_content(content_text: str, keyword: str) -> Optional[FanOutResult]:
-    """Generate GEO content directly from provided text without a retrieval step."""
-
-    system_prompt = _build_system_prompt()
-    user_prompt = _build_user_prompt(content_text, keyword)
-
-    try:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-2024-08-06",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format=FanOutResult,
-        )
-
-        return completion.choices[0].message.parsed
-    except Exception as exc:  # pragma: no cover - network/LLM dependent
-        logger.exception("An error occurred during GEO content generation: %s", exc)
-        return None
+        return {"result": final_result.model_dump()}
+    except Exception as exc:
+        logger.exception("Fan-out workflow failed")
+        return {"error": str(exc)}
 
 
-# --- Flask Adapter ---
+# --- 7. Flask Adapter ---
 
 def run_tool(content_text: str, keyword: str) -> dict:
-    """
-    Adapter function to make the new Fan-Out logic compatible with
-    the existing Flask app call signature.
-    """
-
     if not keyword:
         return {"error": "Keyword is required."}
 
-    # If the user provided source content, try to generate directly; otherwise use the fan-out workflow.
-    if content_text.strip():
-        geo_result = generate_geo_content(content_text, keyword)
-        if geo_result is not None:
-            return {"result": geo_result.model_dump()}
-
-    # Fallback to the retrieval-driven workflow.
-    return run_fan_out_workflow(keyword, use_real_search=False)
+    return run_fan_out_workflow(keyword, content_text)
