@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FanOut AI Analyzer</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #f6f7fb;
+        color: #1f2933;
+      }
+      header {
+        background: #0f766e;
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+      }
+      main {
+        max-width: 900px;
+        margin: 2rem auto;
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      }
+      form {
+        display: grid;
+        gap: 1rem;
+      }
+      label {
+        font-weight: 600;
+      }
+      textarea, input[type="text"] {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 1rem;
+        resize: vertical;
+      }
+      button {
+        background: #0f766e;
+        color: white;
+        border: none;
+        padding: 0.85rem 1.2rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 1rem;
+      }
+      button:hover {
+        background: #0c5f58;
+      }
+      .error {
+        background: #fee2e2;
+        color: #991b1b;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        border: 1px solid #fecaca;
+        margin-top: 1rem;
+      }
+      .results {
+        margin-top: 2rem;
+      }
+      .block {
+        border: 1px solid #e5e7eb;
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+      }
+      .summary {
+        background: #ecfdf3;
+        border: 1px solid #bbf7d0;
+        color: #166534;
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>FanOut AI Analyzer</h1>
+      <p>Generate GEO-compliant answer blocks for your blog content.</p>
+    </header>
+    <main>
+      <form method="post">
+        <div>
+          <label for="keyword">Target Keyword</label>
+          <input id="keyword" name="keyword" type="text" placeholder="e.g., Online Form Builder" value="{{ submitted_keyword }}" required>
+        </div>
+        <div>
+          <label for="content_text">Content to Analyze</label>
+          <textarea id="content_text" name="content_text" rows="8" placeholder="Paste your blog post or article here." required>{{ submitted_text }}</textarea>
+        </div>
+        <div>
+          <button type="submit">Generate Fan-Out Blocks</button>
+        </div>
+      </form>
+
+      {% if error %}
+        <div class="error">{{ error }}</div>
+      {% endif %}
+
+      {% if result %}
+        <section class="results">
+          <div class="summary">
+            <strong>Keyword:</strong> {{ result.main_keyword }}<br>
+            <strong>Strategy Summary:</strong> {{ result.analysis_summary }}
+          </div>
+          {% for block in result.blocks %}
+            <div class="block">
+              <p><strong>Intent:</strong> {{ block.intent_category }}</p>
+              <p><strong>Query:</strong> {{ block.target_query }}</p>
+              <p><strong>Heading:</strong> {{ block.heading }}</p>
+              <p><strong>Content:</strong> {{ block.content }}</p>
+              <p><strong>LMP Score:</strong> {{ block.relevance_score }}/100</p>
+            </div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    </main>
+  </body>
+</html>
