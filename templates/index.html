@@ -11,332 +11,249 @@
         --gold: #ffb629;
         --navy: #0a1551;
         --text: #0f172a;
-        --muted: #4b5563;
-        --bg: #f4f7fb;
+        --muted: #64748b;
+        --bg: #f8fafc;
+        --border: #e2e8f0;
       }
 
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
 
       body {
-        font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         margin: 0;
         min-height: 100vh;
-        background: radial-gradient(circle at 15% 20%, rgba(0, 153, 255, 0.08), transparent 35%),
-          radial-gradient(circle at 85% 30%, rgba(255, 97, 0, 0.08), transparent 32%),
-          radial-gradient(circle at 50% 80%, rgba(10, 21, 81, 0.08), transparent 28%),
-          var(--bg);
+        background: var(--bg);
         color: var(--text);
+        line-height: 1.6;
       }
 
+      /* --- Header --- */
       header {
-        background: linear-gradient(120deg, var(--navy), var(--blue));
-        color: white;
-        padding: 2.5rem 1.5rem 3.25rem;
+        background: white;
+        border-bottom: 1px solid var(--border);
+        padding: 2rem 1.5rem;
         text-align: center;
-        position: relative;
-        overflow: hidden;
-      }
-
-      header::after,
-      header::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        opacity: 0.12;
-        background: radial-gradient(circle at 20% 20%, var(--gold), transparent 35%);
-        transform: translateY(-10%);
-      }
-
-      header::after {
-        background: radial-gradient(circle at 85% 10%, var(--orange), transparent 30%);
-        transform: translateY(18%);
       }
 
       header h1 {
         margin: 0;
-        font-size: 2.25rem;
-        letter-spacing: 0.5px;
+        color: var(--navy);
+        font-size: 1.75rem;
+        letter-spacing: -0.5px;
       }
 
       header p {
-        margin: 0.6rem 0 0;
-        color: rgba(255, 255, 255, 0.88);
-        font-size: 1.05rem;
+        margin: 0.5rem 0 0;
+        color: var(--muted);
       }
 
+      /* --- Main Layout --- */
       main {
-        max-width: 1100px;
-        margin: -2.5rem auto 3rem;
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 0 1.5rem;
+      }
+
+      /* --- Form Section --- */
+      .panel {
         background: white;
-        padding: 2.25rem;
-        border-radius: 18px;
-        box-shadow: 0 20px 60px rgba(10, 21, 81, 0.12);
-        border: 1px solid rgba(10, 21, 81, 0.06);
-        position: relative;
-        z-index: 1;
-      }
-
-      .form-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 1.25rem 1.5rem;
-        align-items: start;
-      }
-
-      .form-panel,
-      .results {
-        border: 1px solid #e5e7eb;
-        border-radius: 14px;
-        padding: 1.5rem;
-        background: linear-gradient(135deg, rgba(0, 153, 255, 0.04), transparent 60%);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        margin-bottom: 2rem;
       }
 
       label {
         display: block;
-        font-weight: 700;
+        font-weight: 600;
         color: var(--navy);
-        margin-bottom: 0.4rem;
-      }
-
-      .hint {
-        color: var(--muted);
+        margin-bottom: 0.5rem;
         font-size: 0.95rem;
-        margin-top: 0.35rem;
       }
 
-      textarea,
       input[type="text"],
-      input[type="file"] {
-        width: 100%;
-        padding: 0.9rem 1rem;
-        border: 1px solid #d5d9e2;
-        border-radius: 12px;
-        font-size: 1rem;
-        background: white;
-        color: var(--text);
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
-      }
-
       textarea {
-        resize: vertical;
-        min-height: 200px;
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 1rem;
+        transition: border-color 0.2s;
+        font-family: inherit;
       }
 
-      textarea:focus,
       input[type="text"]:focus,
-      input[type="file"]:focus {
+      textarea:focus {
         outline: none;
         border-color: var(--blue);
-        box-shadow: 0 0 0 4px rgba(0, 153, 255, 0.16);
+        box-shadow: 0 0 0 3px rgba(0, 153, 255, 0.1);
       }
 
-      .actions {
-        display: flex;
-        gap: 0.8rem;
-        align-items: center;
-        flex-wrap: wrap;
-        margin-top: 0.25rem;
-      }
+      .form-group { margin-bottom: 1.5rem; }
 
       button {
-        background: linear-gradient(135deg, var(--orange), var(--gold));
-        color: #0a0a0a;
+        background: var(--navy);
+        color: white;
         border: none;
-        padding: 0.95rem 1.3rem;
-        border-radius: 12px;
+        padding: 0.85rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
         cursor: pointer;
         font-size: 1rem;
-        font-weight: 700;
-        letter-spacing: 0.2px;
-        box-shadow: 0 12px 30px rgba(255, 97, 0, 0.25);
-        transition: transform 0.1s ease, box-shadow 0.2s ease;
+        transition: background 0.2s;
+        width: 100%;
       }
 
-      button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 16px 40px rgba(255, 97, 0, 0.28);
-      }
+      button:hover { background: #1e293b; }
 
-      button:active {
-        transform: translateY(0);
-      }
-
-      .callout {
-        background: linear-gradient(120deg, rgba(0, 153, 255, 0.08), rgba(255, 182, 41, 0.12));
-        border: 1px solid rgba(0, 153, 255, 0.2);
-        color: var(--navy);
-        border-radius: 12px;
-        padding: 0.85rem 1rem;
-        margin-top: 0.5rem;
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        font-weight: 600;
-      }
-
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        background: rgba(10, 21, 81, 0.08);
-        color: var(--navy);
-        border-radius: 999px;
-        padding: 0.35rem 0.8rem;
-        font-size: 0.9rem;
-        font-weight: 700;
-      }
-
-      .error {
-        background: #ffeae5;
-        color: #9a1c00;
-        padding: 0.95rem 1rem;
-        border-radius: 12px;
-        border: 1px solid #ffc7b3;
-        margin-top: 1.25rem;
-        font-weight: 600;
-      }
-
-      .results {
-        margin-top: 2rem;
-        background: linear-gradient(135deg, rgba(255, 182, 41, 0.08), rgba(0, 153, 255, 0.04));
-        border: 1px solid rgba(10, 21, 81, 0.08);
-      }
-
-      .summary {
-        background: rgba(0, 153, 255, 0.08);
-        border: 1px solid rgba(0, 153, 255, 0.25);
-        color: var(--navy);
-        padding: 1.1rem 1.2rem;
-        border-radius: 12px;
-        margin-bottom: 1.25rem;
+      /* --- Results Section --- */
+      .results-header {
         display: grid;
-        gap: 0.4rem;
+        grid-template-columns: min-content 1fr; /* Key | Value layout */
+        gap: 0.75rem 2rem;
+        background: #f0f9ff; /* Light blue bg */
+        border: 1px solid #bae6fd;
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        align-items: baseline;
       }
 
-      .summary strong {
-        display: inline-block;
-        width: 140px;
+      .results-header strong {
+        color: var(--blue);
+        white-space: nowrap;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
       }
 
-      .blocks {
-        display: grid;
-        gap: 1rem;
+      .results-header span {
+        color: var(--navy);
+        font-weight: 500;
       }
 
+      /* --- Answer Blocks --- */
       .block {
-        border: 1px solid rgba(10, 21, 81, 0.12);
-        padding: 1.1rem 1.2rem;
-        border-radius: 14px;
         background: white;
-        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        border-left: 4px solid var(--orange); /* Accent border */
+      }
+
+      .block-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .intent-badge {
+        background: #fff7ed;
+        color: var(--orange);
+        border: 1px solid #ffedd5;
+        padding: 0.25rem 0.75rem;
+        border-radius: 99px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .score-badge {
+        font-size: 0.85rem;
+        color: var(--muted);
+        font-weight: 500;
       }
 
       .block h3 {
-        margin: 0 0 0.35rem;
+        margin: 0 0 0.75rem;
         color: var(--navy);
-        letter-spacing: 0.15px;
+        font-size: 1.25rem;
       }
 
       .block p {
-        margin: 0.35rem 0;
-        color: var(--text);
+        margin: 0;
+        color: #334155;
+      }
+      
+      .query-subtext {
+        font-size: 0.9rem;
+        color: var(--muted);
+        margin-bottom: 0.5rem !important;
+        font-style: italic;
       }
 
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        background: rgba(255, 97, 0, 0.1);
-        color: var(--orange);
-        padding: 0.35rem 0.75rem;
-        border-radius: 999px;
-        font-weight: 700;
-        font-size: 0.95rem;
-      }
-
-      .score {
-        background: rgba(10, 21, 81, 0.08);
-        color: var(--navy);
-        padding: 0.4rem 0.75rem;
-        border-radius: 10px;
-        font-weight: 700;
-        display: inline-block;
-        margin-top: 0.2rem;
-      }
-
-      @media (max-width: 640px) {
-        header h1 {
-          font-size: 1.8rem;
-        }
-
-        main {
-          padding: 1.5rem;
-        }
-
-        .summary strong {
-          width: auto;
+      /* Mobile Tweak */
+      @media (max-width: 600px) {
+        .results-header {
+          grid-template-columns: 1fr;
+          gap: 0.5rem;
         }
       }
     </style>
   </head>
   <body>
-    <header>
-      <h1>FanOut AI Analyzer</h1>
-      <p>Generate GEO-compliant answer blocks for your blog content.</p>
-    </header>
-    <main>
-      <div class="form-grid">
-        <div class="form-panel">
-          <div class="badge">🚀 Fast semantic analysis</div>
-          <h2 style="margin: 0.75rem 0 0.35rem; color: var(--navy);">Optimize your content instantly</h2>
-          <p style="margin: 0 0 1rem; color: var(--muted);">Feed your content and keyword to build polished answer blocks that align with GEO best practices.</p>
-          <form method="post" enctype="multipart/form-data">
-            <div>
-              <label for="keyword">Target Keyword</label>
-              <input id="keyword" name="keyword" type="text" placeholder="e.g., Online Form Builder" value="{{ submitted_keyword }}" required>
-            </div>
-            <div>
-              <label for="content_text">Content to Analyze</label>
-              <textarea id="content_text" name="content_text" rows="8" placeholder="Paste your blog post or article here.">{{ submitted_text }}</textarea>
-              <div class="callout">💡 Tip: Add headings, FAQs, and product snippets to improve block depth.</div>
-            </div>
-            <div>
-              <label for="content_file">Or upload a text file (UTF-8)</label>
-              <input id="content_file" name="content_file" type="file" accept=".txt,.md,.csv,.json,.log,text/plain">
-              <p class="hint">You can combine pasted text with an uploaded file. Empty inputs are ignored.</p>
-            </div>
-            <div class="actions">
-              <button type="submit">Generate Fan-Out Blocks</button>
-              <span class="badge">🔥 GEO ready in seconds</span>
-            </div>
-          </form>
-          {% if error %}
-            <div class="error">{{ error }}</div>
-          {% endif %}
-        </div>
 
-        {% if result %}
-          <section class="results">
-            <div class="summary">
-              <div><strong>Keyword:</strong> {{ result.main_keyword }}</div>
-              <div><strong>Strategy:</strong> {{ result.analysis_summary }}</div>
-            </div>
-            <div class="blocks">
-              {% for block in result.blocks %}
-                <div class="block">
-                  <div class="pill">{{ block.intent_category }}</div>
-                  <h3>{{ block.heading }}</h3>
-                  <p><strong>Query:</strong> {{ block.target_query }}</p>
-                  <p>{{ block.content }}</p>
-                  <div class="score">LMP Score: {{ block.relevance_score }}/100</div>
-                </div>
-              {% endfor %}
-            </div>
-          </section>
+    <header>
+      <h1>Answer Block Generator</h1>
+      <p>Generate GEO Driven Answer Blocks for Your Blog</p>
+    </header>
+
+    <main>
+      <div class="panel">
+        <form method="post">
+          <div class="form-group">
+            <label for="keyword">Target Keyword</label>
+            <input id="keyword" name="keyword" type="text" 
+                   placeholder="e.g. Best laptop for engineering students" 
+                   value="{{ submitted_keyword }}" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="content_text">Context (Optional)</label>
+            <textarea id="content_text" name="content_text" rows="3" 
+                      placeholder="Optional: Add specific constraints or notes here...">{{ submitted_text }}</textarea>
+          </div>
+
+          <button type="submit">Generate Strategy & Blocks</button>
+        </form>
+        
+        {% if error %}
+          <div style="margin-top: 1rem; color: #dc2626; background: #fef2f2; padding: 1rem; border-radius: 8px;">
+            {{ error }}
+          </div>
         {% endif %}
       </div>
+
+      {% if result %}
+        <section>
+          
+          <div class="results-header">
+            <strong>Target Keyword</strong>
+            <span>{{ submitted_keyword }}</span> <strong>Strategy</strong>
+            <span>{{ result.analysis_summary }}</span>
+          </div>
+
+          {% for block in result.blocks %}
+            <div class="block">
+              <div class="block-meta">
+                <span class="intent-badge">{{ block.intent_category }}</span>
+                <span class="score-badge">Relevance: {{ block.relevance_score }}/100</span>
+              </div>
+              
+              <h3>{{ block.heading }}</h3>
+              <p class="query-subtext">User Query: "{{ block.target_query }}"</p>
+              <p>{{ block.content }}</p>
+            </div>
+          {% endfor %}
+
+        </section>
+      {% endif %}
 
     </main>
   </body>
