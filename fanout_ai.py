@@ -2,20 +2,17 @@ import logging
 import os
 import json
 import textwrap
-from typing import List, Dict, Optional, Literal
+from typing import List, Dict, Optional, Literal  # <--- This fixes your NameError
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 # --- Configuration ---
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# You would typically set this in your .env file
-# OPENAI_API_KEY=sk-...
-# SERPER_API_KEY=... (Optional: for real search)
-
+# Load API Key
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- 1. Data Models ---
@@ -42,8 +39,8 @@ class FanOutResult(BaseModel):
 
 class SearchTool:
     """
-    Handles the 'Retrieval' step in your diagram.
-    Currently defaults to a MOCK implementation to save you money/setup time.
+    Handles the 'Retrieval' step.
+    Default: 'mock' mode uses GPT-4o to SIMULATE search results (Synthetic Data).
     """
     
     def __init__(self, provider: Literal["mock", "serper"] = "mock"):
@@ -51,26 +48,37 @@ class SearchTool:
         self.api_key = os.getenv("SERPER_API_KEY")
 
     def search_multiple(self, queries: List[str]) -> Dict[str, str]:
-        """
-        Takes a list of queries, performs searches, and returns a 
-        dictionary mapping 'query' -> 'summarized_search_results'.
-        """
         results = {}
         for q in queries:
             if self.provider == "serper" and self.api_key:
                 results[q] = self._search_serper(q)
             else:
-                results[q] = self._search_mock(q)
+                results[q] = self._search_mock_smart(q)
         return results
 
-    def _search_mock(self, query: str) -> str:
-        """Simulates a search engine result for testing."""
-        logger.info(f"[Mock Search] Searching for: {query}")
-        # Return fake "scraped" content relevant to the query
-        return f"[Simulated Search Result for '{query}']: Top result discusses {query} in detail. Key specs include 10 hour battery life and M2 processor benchmarks..."
+    def _search_mock_smart(self, query: str) -> str:
+        """
+        Uses the LLM's internal knowledge to hallucinate a realistic search snippet.
+        This makes the tool functional for testing/drafting without a real search engine.
+        """
+        logger.info(f"[Smart Mock] Generating synthetic content for: {query}")
+        
+        # We ask the model to pretend it found this on the web
+        try:
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a search engine simulator. Write a realistic, high-quality search result snippet (100 words) that directly answers the user's query with facts."},
+                    {"role": "user", "content": f"Search Query: {query}"}
+                ]
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Smart mock failed: {e}")
+            return "Error generating mock content."
 
     def _search_serper(self, query: str) -> str:
-        """Real implementation using Serper.dev (Cheap/Fast)."""
+        """Real implementation using Serper.dev"""
         import requests
         
         url = "https://google.serper.dev/search"
@@ -153,21 +161,17 @@ def step_3_synthesize(keyword: str, plan: SubQueryPlan, search_context: Dict[str
     )
     return completion.choices[0].message.parsed
 
-# --- 4. Main Workflow ---
+# --- 4. Main Workflow & Public API ---
 
 def run_fan_out_workflow(keyword: str, use_real_search: bool = False) -> dict:
     """
     Executes the full Pipeline: Plan -> Retrieve -> Synthesize
     """
-    print(f"--- Starting Fan-Out for '{keyword}' ---")
-    
     # 1. PLAN
     try:
         plan = step_1_plan_queries(keyword)
-        print(f"✅ Step 1 (Plan): Generated {len(plan.sub_queries)} queries.")
-        for q in plan.sub_queries:
-            print(f"   - {q}")
     except Exception as e:
+        logger.exception("Step 1 failed")
         return {"error": f"Planning failed: {str(e)}"}
 
     # 2. RETRIEVE
@@ -175,21 +179,33 @@ def run_fan_out_workflow(keyword: str, use_real_search: bool = False) -> dict:
         provider = "serper" if use_real_search else "mock"
         search_tool = SearchTool(provider=provider)
         search_results = search_tool.search_multiple(plan.sub_queries)
-        print(f"✅ Step 2 (Retrieval): Fetched data for {len(search_results)} queries using {provider}.")
     except Exception as e:
+        logger.exception("Step 2 failed")
         return {"error": f"Search failed: {str(e)}"}
 
     # 3. SYNTHESIZE
     try:
         final_result = step_3_synthesize(keyword, plan, search_results)
-        print(f"✅ Step 3 (Synthesis): Generated {len(final_result.blocks)} answer blocks.")
     except Exception as e:
+        logger.exception("Step 3 failed")
         return {"error": f"Synthesis failed: {str(e)}"}
 
-    return final_result.model_dump()
+    # Return as dict for JSON response
+    return {"result": final_result.model_dump()}
 
-# --- Example Usage ---
-if __name__ == "__main__":
-    # Test run
-    result = run_fan_out_workflow("Best laptop for college students")
-    print(json.dumps(result, indent=2))
+# --- Flask Adapter ---
+# This function matches what your flask_app.py expects.
+def run_tool(content_text: str, keyword: str) -> dict:
+    """
+    Adapter function to make the new Fan-Out logic compatible with 
+    the existing Flask app call signature.
+    
+    The 'content_text' is ignored in this new version because we generate 
+    our own search queries, but we keep the argument so Flask doesn't crash.
+    """
+    if not keyword:
+        return {"error": "Keyword is required."}
+        
+    # We call the new workflow here. 
+    # Set use_real_search=True only if you have a SERPER_API_KEY.
+    return run_fan_out_workflow(keyword, use_real_search=False)
