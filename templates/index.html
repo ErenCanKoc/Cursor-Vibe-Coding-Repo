@@ -86,14 +86,19 @@
       <p>Generate GEO-compliant answer blocks for your blog content.</p>
     </header>
     <main>
-      <form method="post">
+      <form method="post" enctype="multipart/form-data">
         <div>
           <label for="keyword">Target Keyword</label>
           <input id="keyword" name="keyword" type="text" placeholder="e.g., Online Form Builder" value="{{ submitted_keyword }}" required>
         </div>
         <div>
           <label for="content_text">Content to Analyze</label>
-          <textarea id="content_text" name="content_text" rows="8" placeholder="Paste your blog post or article here." required>{{ submitted_text }}</textarea>
+          <textarea id="content_text" name="content_text" rows="8" placeholder="Paste your blog post or article here.">{{ submitted_text }}</textarea>
+        </div>
+        <div>
+          <label for="content_file">Or upload a text file (UTF-8)</label>
+          <input id="content_file" name="content_file" type="file" accept=".txt,.md,.csv,.json,.log,text/plain">
+          <p style="margin: 0.35rem 0 0; color: #4b5563; font-size: 0.95rem;">You can combine pasted text with an uploaded file. Empty inputs are ignored.</p>
         </div>
         <div>
           <button type="submit">Generate Fan-Out Blocks</button>

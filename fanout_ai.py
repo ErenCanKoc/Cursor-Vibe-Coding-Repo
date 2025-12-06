@@ -198,7 +198,7 @@ def run_tool(content_text: str, keyword: str) -> dict:
     keyword = (keyword or "").strip()
 
     if not content_text:
-        return {"error": "Content text is required."}
+        return {"error": "Content is required via text input or uploaded file."}
     if not keyword:
         return {"error": "Keyword is required."}
 
