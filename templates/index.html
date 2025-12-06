@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fan-Out GEO Generator</title>
+    <style>
+      :root {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        color: #0f172a;
+        background-color: #f8fafc;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+        min-height: 100vh;
+      }
+
+      .container {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 32px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        color: #111827;
+      }
+
+      p.lead {
+        margin: 0;
+        color: #475569;
+      }
+
+      form {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+        display: grid;
+        gap: 16px;
+      }
+
+      label {
+        font-weight: 600;
+        color: #0f172a;
+      }
+
+      input[type="text"],
+      textarea {
+        width: 100%;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        font-size: 15px;
+        resize: vertical;
+        box-sizing: border-box;
+      }
+
+      textarea {
+        min-height: 180px;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        align-items: center;
+      }
+
+      button {
+        background: #4f46e5;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 18px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.1s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 25px rgba(79, 70, 229, 0.3);
+        background: #4338ca;
+      }
+
+      button:active {
+        transform: translateY(0);
+        box-shadow: none;
+      }
+
+      .alert {
+        margin-top: 20px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        font-weight: 600;
+      }
+
+      .alert-error {
+        background: #fef2f2;
+        color: #b91c1c;
+        border: 1px solid #fecdd3;
+      }
+
+      .results {
+        margin-top: 28px;
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+        display: grid;
+        gap: 20px;
+      }
+
+      .summary {
+        background: #eef2ff;
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid #e0e7ff;
+        color: #312e81;
+      }
+
+      .block {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px;
+        background: #f8fafc;
+      }
+
+      .block h3 {
+        margin-top: 0;
+        margin-bottom: 8px;
+        color: #0f172a;
+      }
+
+      .meta {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        font-size: 14px;
+        color: #475569;
+        margin-bottom: 8px;
+      }
+
+      .content {
+        margin: 0;
+        color: #111827;
+      }
+
+      footer {
+        margin-top: 32px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Fan-Out GEO Generator</h1>
+        <p class="lead">Analyze content, uncover fan-out queries, and preview GEO-ready answer blocks.</p>
+      </header>
+
+      <form method="post" novalidate>
+        <div>
+          <label for="keyword">Target Keyword</label>
+          <input
+            type="text"
+            id="keyword"
+            name="keyword"
+            placeholder="e.g., Online Form Builder"
+            value="{{ keyword }}"
+            required
+          />
+        </div>
+
+        <div>
+          <label for="content_text">Content to Analyze</label>
+          <textarea
+            id="content_text"
+            name="content_text"
+            placeholder="Paste the article or blog content here..."
+            required
+          >{{ content_text }}</textarea>
+        </div>
+
+        <div class="actions">
+          <button type="submit">Generate Fan-Out Plan</button>
+        </div>
+      </form>
+
+      {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+      {% endif %}
+
+      {% if result %}
+      <section class="results">
+        <div class="summary">
+          <strong>Analysis Summary:</strong>
+          <p>{{ result.analysis_summary }}</p>
+        </div>
+
+        {% for block in result.blocks %}
+        <article class="block">
+          <div class="meta">
+            <span><strong>Intent:</strong> {{ block.intent_category }}</span>
+            <span><strong>Query:</strong> {{ block.target_query }}</span>
+            <span><strong>LMP Score:</strong> {{ block.relevance_score }}</span>
+          </div>
+          <h3>{{ block.heading }}</h3>
+          <p class="content">{{ block.content }}</p>
+        </article>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <footer>
+        Ensure your <code>OPENAI_API_KEY</code> is configured in the environment before generating results.
+      </footer>
+    </div>
+  </body>
+</html>
