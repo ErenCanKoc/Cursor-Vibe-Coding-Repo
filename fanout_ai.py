@@ -1,3 +1,4 @@
+import logging
 import os
 import textwrap
 from typing import List, Optional
@@ -5,6 +6,8 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+logger = logging.getLogger(__name__)
 
 # Load API key from .env file
 load_dotenv()
@@ -167,36 +170,44 @@ def generate_geo_content(content_text: str, keyword: str) -> Optional[FanOutResu
         return completion.choices[0].message.parsed
 
     except Exception as exc:  # noqa: BLE001 - broad catch intentionally
-        print(f"An error occurred: {exc}")
+        logger.exception("An error occurred during GEO content generation: %s", exc)
         return None
 
 
 # --- 3. Test Run ---
 
-if __name__ == "__main__":
-    # Sample English blog content (Simulation)
-    sample_blog = """
-    Form builders allow businesses to collect data efficiently. There are many options in the market.
-    Jotform is one of them and it is very easy to use. It features a drag-and-drop interface.
-    Regarding pricing, it offers various options ranging from free to enterprise levels. 
-    Security measures are also top-notch, compliant with GDPR and HIPAA.
-    Thanks to integrations, you can send data to CRM tools like Salesforce or HubSpot automatically.
+def run_tool(content_text: str, keyword: str) -> dict:
+    """
+    Execute the FanOut AI workflow and return structured results for UI rendering.
+
+    Parameters
+    ----------
+    content_text:
+        The blog or article text to analyze.
+    keyword:
+        The primary keyword that guides fan-out query generation.
+
+    Returns
+    -------
+    dict
+        A dictionary containing either a ``result`` key with ``FanOutResult`` data
+        or an ``error`` key with a human-friendly message.
     """
 
-    keyword = "Online Form Builder"
+    content_text = (content_text or "").strip()
+    keyword = (keyword or "").strip()
 
-    print(f"🤖 Starting GEO Analysis for '{keyword}'...\n")
-    result = generate_geo_content(sample_blog, keyword)
+    if not content_text:
+        return {"error": "Content text is required."}
+    if not keyword:
+        return {"error": "Keyword is required."}
 
-    if result:
-        print(f"📊 Strategy Summary: {result.analysis_summary}\n")
-        for i, block in enumerate(result.blocks, 1):
-            print(f"--- Answer Block #{i} ---")
-            print(f"🎯 Intent: {block.intent_category}")
-            print(f"🔍 Query: {block.target_query}")
-            print(f"🏷️ Heading: {block.heading}")
-            print(f"📝 Content: {block.content}")
-            print(f"⭐ LMP Score: {block.relevance_score}/100")
-            print("-" * 30)
-    else:
-        print("An error occurred while generating the response.")
+    if not os.getenv("OPENAI_API_KEY"):
+        return {"error": "OPENAI_API_KEY is not configured."}
+
+    result = generate_geo_content(content_text, keyword)
+
+    if result is None:
+        return {"error": "The AI service could not generate a response. Please try again."}
+
+    return {"result": result}
