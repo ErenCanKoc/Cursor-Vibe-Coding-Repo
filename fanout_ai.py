@@ -68,6 +68,19 @@ class AnswerBlock(BaseModel):
         if any(value.lower().startswith(start) for start in forbidden_starts):
             raise ValueError("Text starts with an ambiguous pronoun. Please use the Subject (Brand Name/Product) explicitly.")
 
+        # Rule 3: Subject-first requirement (avoid single-word pronouns even when capitalized)
+        first_word = value.strip().split()[0].strip(",.?!:;\"'\(\)").lower()
+        if first_word in {"it", "this", "these", "those", "they", "he", "she"}:
+            raise ValueError("First word must be an explicit subject (product/brand), not a pronoun.")
+
+        # Rule 4: Single-paragraph constraint
+        if "\n\n" in value or "\n" in value:
+            raise ValueError("Answer Block must be a single paragraph without line breaks.")
+
+        # Rule 5: Causal connector requirement
+        if not any(connector in value.lower() for connector in {" because ", " therefore", " which means"}):
+            raise ValueError("Answer Block must include a causal explanation using 'because', 'therefore', or 'which means'.")
+
         return value
 
     @field_validator("heading")
