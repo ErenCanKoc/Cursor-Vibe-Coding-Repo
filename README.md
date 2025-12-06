@@ -1,17 +1,17 @@
 # Fan-Out Query Research Model
 
-This repository provides a Python utility for generating and validating GEO-focused fan-out query snippets using OpenAI's structured outputs.
+This repository provides a Flask-based demo and reusable Python module for generating GEO-focused fan-out query snippets using OpenAI structured outputs. It plans sub-queries for a keyword, gathers synthetic search context, and synthesizes 40–80 word answer blocks that are ready for AI surfaces.
 
 ## Features
-- Builds GEO-compliant answer blocks (40-80 words, no ambiguous pronouns, validated intent categories, and relevance scores).
-- Requests 3-5 unique fan-out queries per keyword and enforces per-block validation via Pydantic.
-- Structured OpenAI chat completion request with dedicated system/user prompts for fan-out research.
-- Simple CLI entry point to run the model against sample content.
+- End-to-end workflow that plans 3–5 sub-queries, gathers context, and synthesizes GEO-ready answers.
+- Pydantic data models (`SubQueryPlan`, `AnswerBlock`, `FanOutResult`) to validate model responses.
+- Flask UI and JSON API for interactive testing or programmatic use.
+- Structured OpenAI chat completion requests with dedicated system/user prompts.
 
 ## Requirements
 - Python 3.10+
-- Dependencies: `openai`, `pydantic`, `python-dotenv` (install via `pip install -r requirements.txt` or `pip install openai pydantic python-dotenv`).
-- An `OPENAI_API_KEY` environment variable (set in a `.env` file or exported in your shell).
+- Dependencies: `openai`, `pydantic`, `python-dotenv`, `flask` (install via `pip install -r requirements.txt`).
+- `OPENAI_API_KEY` environment variable (set in a `.env` file or exported in your shell).
 
 ## Setup
 1. Clone the repository and navigate into it:
@@ -19,48 +19,63 @@ This repository provides a Python utility for generating and validating GEO-focu
    git clone <repo-url>
    cd Cursor-Vibe-Coding-Repo
    ```
-2. Install dependencies:
+2. (Optional) Create a virtual environment:
    ```bash
-   pip install -r requirements.txt  # or: pip install openai pydantic python-dotenv
+   python -m venv .venv
+   source .venv/bin/activate
    ```
-3. Add your API key to a `.env` file in the project root:
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Add your API key to a `.env` file in the project root:
    ```bash
    echo "OPENAI_API_KEY=your_key_here" > .env
    ```
 
-## Usage
-Run the example end-to-end flow with the included sample content:
+## Running the Flask app
+Start the local server (the template folder is already configured in `app.py`):
 ```bash
-python "FanOut AI"
+python app.py
 ```
+Then open http://127.0.0.1:5000 to use the form UI. Submitted content and keywords will run through the fan-out workflow and display the generated analysis summary plus answer blocks.
 
-To integrate with your own content and keyword in another script, either rename the file to a valid module name (e.g., `fanout.py`) or load it dynamically:
+### JSON API
+You can also hit the API directly:
+```bash
+curl -X POST http://127.0.0.1:5000/api/fanout \
+  -H "Content-Type: application/json" \
+  -d '{"content_text": "Your source text", "keyword": "electric vehicle range"}'
+```
+The response contains either a `result` payload matching the `FanOutResult` schema or an `error` message.
+
+## Using the module directly
+If you want to call the workflow in your own scripts without Flask:
 ```python
-import importlib.util
-from pathlib import Path
+from fanout_ai import run_tool
 
-module_path = Path("FanOut AI").resolve()
-spec = importlib.util.spec_from_file_location("fanout_ai", module_path)
-fanout_ai = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(fanout_ai)
+content = "Short excerpt about battery safety standards..."
+keyword = "lithium battery safety"
+response = run_tool(content_text=content, keyword=keyword)
 
-result = fanout_ai.generate_geo_content(your_blog_text, "target keyword")
-if result:
-    for block in result.blocks:
-        print(block.heading, block.content)
+if "result" in response:
+    for block in response["result"]["blocks"]:
+        print(block["heading"], block["content"])
+else:
+    print("Error:", response["error"])
 ```
 
-## Validation Rules (Summary)
-- **Intent categories** must be one of: `Tanım`, `Karşılaştırma`, `Kısıtlar`, `Nasıl Yapılır`.
-- **Content length** must be 40-80 words and cannot start with ambiguous pronouns (e.g., "bu", "this", "they").
-- **Headings** cannot be blank and should restate the target query.
-- **Relevance scores** must be between 0 and 100.
-- Each run must produce **3-5 unique** `target_query` values.
+## Validation rules (summary)
+- Intent categories must be one of `Definition`, `Comparison`, `Limitations`, `How-to`.
+- Content length must be 40–80 words and cannot start with ambiguous pronouns.
+- Headings cannot be blank and should restate the target query.
+- Relevance and source quality scores are integers between 0 and 100.
+- Each run should produce **3–5 unique** sub-queries and matching answer blocks.
 
-## Prompt Strategy
-- The system prompt instructs the model to craft standalone GEO snippets, prioritize numeric details, and apply a light "Because/Therefore" reasoning style.
-- The user prompt trims the source content (up to 4000 characters), requests 3-5 fan-out queries missing from the source snippet, and asks for concise, focused headings per block.
+## Prompt strategy
+- The system prompt instructs the model to craft standalone GEO snippets with causal explanations and snippet-first structure.
+- The user prompt provides the keyword, strategy, and mock search context for synthesis.
+- The planning step uses its own prompt to create diverse, answerable sub-queries before synthesis.
 
-## Notes
-- The script prints a clear error message if the model call fails and returns `None` instead of raising.
-- Adjust the sample content and `keyword` in the `__main__` section to test different scenarios.
+## System documentation
+See [`docs/system_overview.md`](docs/system_overview.md) for a deeper look at the architecture, data contracts, and operational notes.
